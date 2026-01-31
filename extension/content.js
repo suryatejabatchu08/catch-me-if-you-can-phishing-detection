@@ -30,6 +30,172 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 /**
+ * Analyze form behavior for suspicious patterns
+ */
+function analyzeFormBehavior(form) {
+  const analysis = {
+    suspiciousScore: 0,
+    flags: [],
+    details: {}
+  };
+  
+  try {
+    const currentDomain = window.location.hostname;
+    const currentProtocol = window.location.protocol;
+    
+    // 1. Check form action URL
+    if (form.action) {
+      try {
+        const actionUrl = new URL(form.action, window.location.href);
+        const actionDomain = actionUrl.hostname;
+        
+        analysis.details.actionDomain = actionDomain;
+        analysis.details.actionProtocol = actionUrl.protocol;
+        
+        // External domain submission
+        if (actionDomain !== currentDomain) {
+          analysis.suspiciousScore += 30;
+          analysis.flags.push({
+            type: 'external_submission',
+            severity: 'high',
+            message: `Form submits to external domain: ${actionDomain}`
+          });
+        }
+        
+        // HTTP submission (insecure)
+        if (actionUrl.protocol === 'http:') {
+          analysis.suspiciousScore += 25;
+          analysis.flags.push({
+            type: 'insecure_submission',
+            severity: 'high',
+            message: 'Form submits credentials over HTTP (unencrypted)'
+          });
+        }
+        
+        // HTTPS page with HTTP form submission (mixed content)
+        if (currentProtocol === 'https:' && actionUrl.protocol === 'http:') {
+          analysis.suspiciousScore += 35;
+          analysis.flags.push({
+            type: 'mixed_content',
+            severity: 'critical',
+            message: 'HTTPS page submitting to HTTP endpoint (security downgrade)'
+          });
+        }
+        
+      } catch (e) {
+        console.warn('Could not parse form action URL:', e);
+      }
+    } else {
+      // No action attribute - might use JavaScript
+      analysis.details.noAction = true;
+    }
+    
+    // 2. Check for suspicious hidden fields
+    const hiddenFields = form.querySelectorAll('input[type="hidden"]');
+    if (hiddenFields.length > 5) {
+      analysis.suspiciousScore += 10;
+      analysis.flags.push({
+        type: 'excessive_hidden_fields',
+        severity: 'medium',
+        message: `Form contains ${hiddenFields.length} hidden fields`
+      });
+    }
+    
+    // Check for suspicious hidden field names
+    hiddenFields.forEach(field => {
+      const suspiciousNames = ['redirect', 'return', 'callback', 'continue', 'next', 'goto'];
+      if (suspiciousNames.some(name => field.name.toLowerCase().includes(name))) {
+        analysis.suspiciousScore += 5;
+        analysis.flags.push({
+          type: 'suspicious_redirect',
+          severity: 'medium',
+          message: `Suspicious hidden field: ${field.name}`
+        });
+      }
+    });
+    
+    // 3. Check for JavaScript form handlers
+    const hasOnSubmit = form.hasAttribute('onsubmit') || form.onsubmit;
+    if (hasOnSubmit) {
+      analysis.details.jsHandler = true;
+      // JavaScript handlers can be legitimate (validation) but also used to hide malicious behavior
+      const onsubmitCode = form.getAttribute('onsubmit') || '';
+      
+      // Check for suspicious patterns in handler
+      if (onsubmitCode.includes('eval') || onsubmitCode.includes('document.write')) {
+        analysis.suspiciousScore += 20;
+        analysis.flags.push({
+          type: 'suspicious_javascript',
+          severity: 'high',
+          message: 'Form uses suspicious JavaScript methods (eval/document.write)'
+        });
+      }
+    }
+    
+    // 4. Check for forms without method or using GET for credentials
+    const method = (form.method || 'get').toLowerCase();
+    if (method === 'get' && form.querySelector('input[type="password"]')) {
+      analysis.suspiciousScore += 40;
+      analysis.flags.push({
+        type: 'password_in_get',
+        severity: 'critical',
+        message: 'Password field submitted via GET method (visible in URL)'
+      });
+    }
+    
+    // 5. Check target attribute (opening in new window)
+    if (form.target === '_blank') {
+      analysis.suspiciousScore += 15;
+      analysis.flags.push({
+        type: 'new_window_submission',
+        severity: 'medium',
+        message: 'Form submits to new window/tab'
+      });
+    }
+    
+    // 6. Check autocomplete settings
+    const autocomplete = form.getAttribute('autocomplete');
+    if (autocomplete === 'off' && form.querySelector('input[type="password"]')) {
+      // Legitimate sites often disable autocomplete for security
+      // But phishing sites also do this
+      analysis.details.autocompleteOff = true;
+    }
+    
+  } catch (error) {
+    console.error('Error analyzing form behavior:', error);
+  }
+  
+  return analysis;
+}
+
+/**
+ * Check for external scripts that might be malicious
+ */
+function detectExternalScripts() {
+  const scripts = document.querySelectorAll('script[src]');
+  const currentDomain = window.location.hostname;
+  const externalScripts = [];
+  
+  scripts.forEach(script => {
+    try {
+      const scriptUrl = new URL(script.src, window.location.href);
+      if (scriptUrl.hostname !== currentDomain) {
+        externalScripts.push({
+          src: script.src,
+          domain: scriptUrl.hostname,
+          async: script.async,
+          defer: script.defer
+        });
+      }
+    } catch (e) {
+      // Invalid URL
+    }
+  });
+  
+  return externalScripts;
+}
+
+/**
  * Scan page for credential harvesting indicators
  */
 function scanForCredentialForms() {
@@ -48,25 +214,115 @@ function scanForCredentialForms() {
     credentialFormDetected = true;
     console.log('⚠️ Credential form detected on risky page!');
     
-    // Show inline warning
-    showInlineWarning();
+    // Analyze form behavior
+    const forms = document.querySelectorAll('form');
+    let totalFormSuspicionScore = 0;
+    const formAnalysisResults = [];
+    
+    forms.forEach(form => {
+      // Only analyze forms with password or email fields
+      if (form.querySelector('input[type="password"]') || 
+          form.querySelector('input[type="email"], input[name*="email"], input[name*="user"]')) {
+        
+        const analysis = analyzeFormBehavior(form);
+        formAnalysisResults.push(analysis);
+        totalFormSuspicionScore += analysis.suspiciousScore;
+        
+        // Log findings
+        if (analysis.flags.length > 0) {
+          console.log('%c🔍 Form Behavior Analysis:', 'color: #f59e0b; font-weight: bold');
+          analysis.flags.forEach(flag => {
+            const color = flag.severity === 'critical' ? '#dc2626' : 
+                         flag.severity === 'high' ? '#ea580c' : '#f59e0b';
+            console.log(`%c  ⚠️ ${flag.type}: ${flag.message}`, `color: ${color}`);
+          });
+        }
+      }
+    });
+    
+    // Check for external scripts
+    const externalScripts = detectExternalScripts();
+    if (externalScripts.length > 0) {
+      console.log('%c📜 External Scripts Detected:', 'color: #8b5cf6; font-weight: bold', externalScripts.length);
+      externalScripts.slice(0, 5).forEach(script => {
+        console.log(`  • ${script.domain}`);
+      });
+    }
+    
+    // Store analysis results for later use
+    currentPageStatus.formAnalysis = {
+      totalSuspicionScore: totalFormSuspicionScore,
+      forms: formAnalysisResults,
+      externalScripts: externalScripts.length,
+      timestamp: Date.now()
+    };
+    
+    // Enhance threat score based on form behavior
+    const enhancedScore = Math.min(100, currentPageStatus.score + totalFormSuspicionScore);
+    
+    console.log('%c🎯 Enhanced Threat Score:', 'color: #dc2626; font-weight: bold; font-size: 14px');
+    console.log(`   Original: ${currentPageStatus.score}/100`);
+    console.log(`   Form Suspicion: +${totalFormSuspicionScore}`);
+    console.log(`   Final: ${enhancedScore}/100`);
+    
+    // Update current page status with enhanced score
+    currentPageStatus.score = enhancedScore;
+    currentPageStatus.originalScore = currentPageStatus.score - totalFormSuspicionScore;
+    
+    // Show inline warning with enhanced details
+    showInlineWarning(formAnalysisResults);
     
     // Block form submissions
     setupFormInterception();
     
-    // Notify background script
+    // Notify background script with enhanced score
     chrome.runtime.sendMessage({
-      action: 'credentialDetected',
-      url: window.location.href
+      action: 'updateThreatScore',
+      url: window.location.href,
+      enhancedScore: enhancedScore,
+      formSuspicionScore: totalFormSuspicionScore,
+      formAnalysis: {
+        suspicionScore: totalFormSuspicionScore,
+        flagCount: formAnalysisResults.reduce((sum, r) => sum + r.flags.length, 0),
+        externalScripts: externalScripts.length,
+        flags: formAnalysisResults.flatMap(r => r.flags)
+      }
     });
+    
+    // If enhanced score exceeds threshold, trigger high threat handling
+    if (enhancedScore >= 60 && !currentPageStatus.highThreatTriggered) {
+      currentPageStatus.highThreatTriggered = true;
+      console.log('%c🚨 THREAT THRESHOLD EXCEEDED DUE TO FORM BEHAVIOR!', 'color: #dc2626; font-weight: bold; font-size: 16px');
+      
+      chrome.runtime.sendMessage({
+        action: 'credentialDetected',
+        url: window.location.href,
+        enhancedScore: enhancedScore,
+        formAnalysis: {
+          suspicionScore: totalFormSuspicionScore,
+          flagCount: formAnalysisResults.reduce((sum, r) => sum + r.flags.length, 0),
+          externalScripts: externalScripts.length
+        }
+      });
+    }
   }
 }
 
 /**
  * Show inline warning banner at top of page
  */
-function showInlineWarning() {
+function showInlineWarning(formAnalysisResults = []) {
   if (warningOverlayActive) return;
+  
+  // Extract critical flags from form analysis
+  const criticalFlags = [];
+  formAnalysisResults.forEach(result => {
+    result.flags.forEach(flag => {
+      if (flag.severity === 'critical' || flag.severity === 'high') {
+        criticalFlags.push(flag.message);
+      }
+    });
+  });
   
   const banner = document.createElement('div');
   banner.id = 'phishguard-warning-banner';
@@ -89,14 +345,17 @@ function showInlineWarning() {
     animation: slideDown 0.3s ease;
   `;
   
+  const warningText = criticalFlags.length > 0 
+    ? criticalFlags[0] 
+    : `This site has been flagged as potentially dangerous (Threat Score: ${currentPageStatus.score}/100).`;
+  
   banner.innerHTML = `
     <div style="display: flex; align-items: center; gap: 12px;">
       <span style="font-size: 24px;">🛡️</span>
       <div>
         <div style="font-size: 16px; margin-bottom: 4px;">⚠️ PhishGuard Protection Active</div>
         <div style="font-size: 13px; opacity: 0.9;">
-          This site has been flagged as potentially dangerous (Threat Score: ${currentPageStatus.score}/100).
-          Credential submission is blocked.
+          ${warningText} Credential submission is blocked.
         </div>
       </div>
     </div>
@@ -155,6 +414,29 @@ function showDetailedWarningModal() {
     animation: fadeIn 0.2s ease;
   `;
   
+  // Add form behavior analysis results
+  let formBehaviorSection = '';
+  if (currentPageStatus.formAnalysis && currentPageStatus.formAnalysis.forms.length > 0) {
+    const allFlags = currentPageStatus.formAnalysis.forms.flatMap(f => f.flags);
+    if (allFlags.length > 0) {
+      const formFlagsList = allFlags.map(flag => {
+        const icon = flag.severity === 'critical' ? '🚨' : flag.severity === 'high' ? '⚠️' : '⚡';
+        return `<li style="margin: 8px 0; color: ${flag.severity === 'critical' ? '#dc2626' : '#ea580c'};">
+          ${icon} ${flag.message}
+        </li>`;
+      }).join('');
+      
+      formBehaviorSection = `
+        <div style="margin: 24px 0;">
+          <h3 style="font-size: 16px; color: #111827; margin-bottom: 12px;">🔍 Form Behavior Analysis</h3>
+          <ul style="font-size: 14px; line-height: 1.6; padding-left: 24px;">
+            ${formFlagsList}
+          </ul>
+        </div>
+      `;
+    }
+  }
+  
   const reasons = currentPageStatus.reasons || [];
   const reasonsList = reasons.map(r => `<li style="margin: 8px 0;">${r}</li>`).join('');
   
@@ -162,6 +444,8 @@ function showDetailedWarningModal() {
     <div style="
       background: white;
       border-radius: 16px;
+      ${formBehaviorSection}
+      
       padding: 32px;
       max-width: 500px;
       width: 90%;

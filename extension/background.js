@@ -606,6 +606,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Async response
   }
   
+  if (request.action === 'updateThreatScore') {
+    // Content script reports enhanced threat score from form analysis
+    const tabId = sender.tab?.id;
+    if (tabId) {
+      const currentStatus = getTabStatus(tabId);
+      const updatedStatus = {
+        ...currentStatus,
+        score: request.enhancedScore,
+        originalScore: currentStatus.score,
+        formSuspicionScore: request.formSuspicionScore,
+        formAnalysis: request.formAnalysis,
+        enhancedByFormAnalysis: true
+      };
+      
+      // Add form analysis reasons to threat reasons
+      if (request.formAnalysis?.flags) {
+        const formReasons = request.formAnalysis.flags.map(flag => 
+          `Form Analysis: ${flag.message}`
+        );
+        updatedStatus.reasons = [...(currentStatus.reasons || []), ...formReasons];
+      }
+      
+      updateTabStatus(tabId, updatedStatus);
+      
+      console.log('%c📊 Threat Score Enhanced by Form Analysis:', 'color: #ea580c; font-weight: bold');
+      console.log(`   Tab ${tabId}: ${currentStatus.score} → ${request.enhancedScore}`);
+      console.log(`   Form Suspicion: +${request.formSuspicionScore}`);
+      
+      sendResponse({ success: true, updatedScore: request.enhancedScore });
+    }
+    return true;
+  }
+  
   if (request.action === 'whitelistDomain') {
     // Add domain to whitelist
     chrome.storage.local.get('whitelist', (result) => {
