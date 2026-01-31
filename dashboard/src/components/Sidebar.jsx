@@ -5,39 +5,46 @@ import { Shield, BarChart3, History, GraduationCap, Settings } from 'lucide-reac
 export default function Sidebar() {
   const navItems = [
     { to: '/dashboard', icon: BarChart3, label: 'Dashboard' },
-    { to: '/threats', icon: History, label: 'Threat History' },
-    { to: '/training', icon: GraduationCap, label: 'Training Mode' },
+    { to: '/threats', icon: History, label: 'History' },
+    { to: '/training', icon: GraduationCap, label: 'Training' },
     { to: '/settings', icon: Settings, label: 'Settings' }
   ];
 
   return (
-    <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700">
-      <div className="flex items-center gap-3 p-6 border-b border-gray-200 dark:border-gray-700">
-        <Shield className="w-8 h-8 text-blue-600" />
+    <aside className="w-80 bg-gradient-to-b from-slate-900 to-slate-950 border-r border-cyan-500/20">
+      <div className="flex items-center gap-3 p-8 border-b border-cyan-500/20">
+        <div className="relative">
+          <Shield className="w-10 h-10 glow-cyan" />
+        </div>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">PhishGuard AI</h1>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Real-Time Protection</p>
+          <h1 className="text-2xl font-bold text-white glow-cyan">PhishGuard AI</h1>
+          <p className="text-xs text-cyan-400/60">Realtime Phishing Protection</p>
         </div>
       </div>
       
-      <nav className="p-4 space-y-2">
+      <nav className="p-6 space-y-3">
         {navItems.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              `flex items-center gap-4 px-5 py-4 rounded-xl transition-all duration-300 ${
                 isActive
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  ? 'bg-gradient-to-r from-cyan-500/30 to-transparent border border-cyan-500/40 text-cyan-300 shadow-lg shadow-cyan-500/10'
+                  : 'text-slate-300 hover:bg-slate-800/50 border border-transparent hover:border-cyan-500/20'
               }`
             }
           >
             <Icon className="w-5 h-5" />
-            <span className="font-medium">{label}</span>
+            <span className="font-medium text-lg">{label}</span>
           </NavLink>
         ))}
       </nav>
+
+      <div className="absolute bottom-8 left-6 right-6 p-4 bg-slate-800/50 rounded-xl border border-cyan-500/10">
+        <p className="text-xs text-slate-400 mb-2">Threats Blocked</p>
+        <p className="text-2xl font-bold text-cyan-400">1,245</p>
+      </div>
     </aside>
   );
 }

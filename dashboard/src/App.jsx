@@ -8,27 +8,14 @@ import TrainingMode from './pages/TrainingMode';
 import Settings from './pages/Settings';
 
 function App() {
-  const [darkMode, setDarkMode] = useState(() => {
-    const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
-  });
-
-  const toggleDarkMode = () => {
-    setDarkMode(prev => {
-      const newValue = !prev;
-      localStorage.setItem('darkMode', JSON.stringify(newValue));
-      return newValue;
-    });
-  };
-
   return (
-    <div className={darkMode ? 'dark' : ''}>
+    <div>
       <Router>
-        <div className="flex h-screen overflow-hidden bg-gray-50 dark:bg-gray-900">
+        <div className="flex h-screen overflow-hidden bg-slate-950">
           <Sidebar />
           <div className="flex-1 flex flex-col overflow-hidden">
-            <Header darkMode={darkMode} toggleDarkMode={toggleDarkMode} />
-            <main className="flex-1 overflow-y-auto p-6">
+            <Header />
+            <main className="flex-1 overflow-y-auto p-8">
               <Routes>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />

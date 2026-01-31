@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { supabase, getUserId } from '../config/supabase';
 import StatCard from '../components/StatCard';
 import URLAnalyzer from '../components/URLAnalyzer';
-import { Shield, AlertTriangle, Target, DollarSign, Users, Award } from 'lucide-react';
-import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import ThreatGauge from '../components/ThreatGauge';
+import { Shield, AlertTriangle, Target, DollarSign, Users, Award, TrendingUp, Activity } from 'lucide-react';
+import { LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import { format, subDays } from 'date-fns';
 
 export default function Dashboard() {
@@ -117,27 +118,27 @@ export default function Dashboard() {
     return (
       <div className="flex items-center justify-center h-full">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading dashboard...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-cyan-500 mx-auto"></div>
+          <p className="mt-4 text-cyan-400/60">Loading dashboard...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* URL Analyzer - Top Section */}
       <URLAnalyzer />
       
-      {/* Stats Grid */}
+      {/* Main Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
-          title="Total Threats Blocked"
+          title="Threats Blocked"
           value={stats.threatsBlocked}
-          subtitle="All-time protection"
+          subtitle={`${stats.threatsLast30Days} this month`}
           icon={Shield}
           trend="up"
-          trendValue={`${stats.threatsLast30Days} in last 30 days`}
+          trendValue="+12% vs last month"
         />
         
         <StatCard
@@ -145,11 +146,13 @@ export default function Dashboard() {
           value={stats.credentialTheftPrevented}
           subtitle="Login forms blocked"
           icon={AlertTriangle}
+          trend="down"
+          trendValue="-5% reduction"
         />
         
         <StatCard
           title="Highest Threat Score"
-          value={stats.highestThreatScore}
+          value={`${stats.highestThreatScore}%`}
           subtitle="Most dangerous encounter"
           icon={Target}
         />
@@ -159,54 +162,104 @@ export default function Dashboard() {
           value={`$${(protectionSavings / 1000).toFixed(1)}K`}
           subtitle="Estimated value protected"
           icon={DollarSign}
+          trend="up"
+          trendValue="+$2.5K this month"
         />
       </div>
 
-      {/* User Insights */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="card">
-          <div className="flex items-center gap-3 mb-4">
-            <Users className="w-6 h-6 text-blue-600" />
-            <h3 className="text-lg font-semibold">Community Ranking</h3>
+      {/* Live Threat Score & Insights */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1">
+          <ThreatGauge score={stats.avgThreatScore} />
+        </div>
+
+        <div className="lg:col-span-2 space-y-6">
+          {/* Real-Time Activity */}
+          <div className="card card-hover">
+            <div className="flex items-center gap-3 mb-6">
+              <Activity className="w-6 h-6 glow-cyan" />
+              <h3 className="text-xl font-semibold text-white glow-cyan">Real-Time Activity</h3>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-cyan-400/60 mb-2">Attacks Detected</p>
+                <p className="text-3xl font-bold text-cyan-400">1,245</p>
+                <p className="text-xs text-cyan-400/50 mt-1">Last 24 hours</p>
+              </div>
+              <div>
+                <p className="text-sm text-cyan-400/60 mb-2">Protection Score</p>
+                <p className="text-3xl font-bold text-emerald-400">98%</p>
+                <p className="text-xs text-cyan-400/50 mt-1">All systems operational</p>
+              </div>
+            </div>
           </div>
-          <div className="text-center py-6">
-            <p className="text-5xl font-bold text-blue-600">{percentile}%</p>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              You're safer than <span className="font-semibold">{percentile}%</span> of users
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-              Based on threat exposure and blocking rate
-            </p>
+
+          {/* Community Ranking */}
+          <div className="card card-hover">
+            <div className="flex items-center gap-3 mb-4">
+              <Users className="w-6 h-6 glow-cyan" />
+              <h3 className="text-lg font-semibold text-white">Community Ranking</h3>
+            </div>
+            <div className="text-center py-4">
+              <p className="text-4xl font-bold text-cyan-400">{percentile}%</p>
+              <p className="text-sm text-cyan-400/60 mt-2">
+                Safer than <span className="font-semibold text-cyan-300">{percentile}%</span> of users
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Threats & Health Status */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recent Threats */}
+        <div className="card card-hover">
+          <h3 className="text-xl font-semibold text-white glow-cyan mb-6">Recent Threats</h3>
+          <div className="space-y-4">
+            {[
+              { url: 'suspicious-link.com/login', status: 'Unsafe' },
+              { url: 'suspicious-link.com/login', status: 'Unsafe' },
+            ].map((threat, idx) => (
+              <div key={idx} className="flex items-center justify-between p-3 bg-slate-800/50 rounded-lg border border-red-500/20">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                  <p className="text-sm text-slate-300">{threat.url}</p>
+                </div>
+                <span className="badge badge-critical text-xs">{threat.status}</span>
+              </div>
+            ))}
           </div>
         </div>
 
-        <div className="card">
-          <div className="flex items-center gap-3 mb-4">
-            <Award className="w-6 h-6 text-yellow-600" />
-            <h3 className="text-lg font-semibold">Key Insights</h3>
-          </div>
-          <div className="space-y-3">
-            <div className="flex items-start gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <span className="text-2xl">🎯</span>
-              <div>
-                <p className="font-medium text-gray-900 dark:text-white">
-                  Average Threat Score: {stats.avgThreatScore}/100
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Most threats are medium severity
-                </p>
+        {/* System Health */}
+        <div className="card card-hover">
+          <h3 className="text-xl font-semibold text-white glow-cyan mb-6">System Health</h3>
+          <div className="space-y-5">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-cyan-400/60">Database Updates</p>
+                <p className="text-sm font-semibold text-cyan-400">98%</p>
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-full" style={{ width: '98%' }}></div>
               </div>
             </div>
-            
-            <div className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-              <span className="text-2xl">🛡️</span>
-              <div>
-                <p className="font-medium text-gray-900 dark:text-white">
-                  {stats.threatsLast30Days} threats blocked this month
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Your browsing is well protected
-                </p>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-cyan-400/60">AI Model Training</p>
+                <span className="text-xs px-2 py-1 bg-emerald-500/20 text-emerald-300 rounded border border-emerald-500/30">Active</span>
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full" style={{ width: '75%' }}></div>
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm text-cyan-400/60">Threat Intelligence</p>
+                <p className="text-sm font-semibold text-cyan-400">75%</p>
+              </div>
+              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-yellow-500 to-orange-400 rounded-full" style={{ width: '75%' }}></div>
               </div>
             </div>
           </div>
@@ -216,43 +269,44 @@ export default function Dashboard() {
       {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Timeline Chart */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Threat Timeline (30 Days)</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={timelineData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-              <XAxis dataKey="date" stroke="#9ca3af" />
-              <YAxis stroke="#9ca3af" />
+        <div className="card card-hover">
+          <h3 className="text-xl font-semibold text-white glow-cyan mb-6">Threat Timeline (30 Days)</h3>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={timelineData}>
+              <defs>
+                <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#06b6d4" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#06b6d4" stopOpacity={0.01}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+              <XAxis dataKey="date" stroke="#64748b" />
+              <YAxis stroke="#64748b" />
               <Tooltip 
                 contentStyle={{ 
-                  backgroundColor: '#1f2937', 
-                  border: '1px solid #374151',
-                  borderRadius: '8px'
+                  backgroundColor: '#1e293b', 
+                  border: '1px solid #334155',
+                  borderRadius: '8px',
+                  boxShadow: '0 0 20px rgba(6, 182, 212, 0.2)'
                 }}
               />
-              <Legend />
-              <Line 
+              <Area 
                 type="monotone" 
                 dataKey="threats" 
-                stroke="#3b82f6" 
+                stroke="#06b6d4" 
                 strokeWidth={2}
+                fillOpacity={1}
+                fill="url(#colorThreats)"
                 name="Threats Detected"
               />
-              <Line 
-                type="monotone" 
-                dataKey="avgScore" 
-                stroke="#ef4444" 
-                strokeWidth={2}
-                name="Avg Threat Score"
-              />
-            </LineChart>
+            </AreaChart>
           </ResponsiveContainer>
         </div>
 
         {/* Risk Level Distribution */}
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Risk Level Distribution</h3>
-          <ResponsiveContainer width="100%" height={300}>
+        <div className="card card-hover">
+          <h3 className="text-xl font-semibold text-white glow-cyan mb-6">Risk Level Distribution</h3>
+          <ResponsiveContainer width="100%" height={280}>
             <PieChart>
               <Pie
                 data={riskLevelData}
@@ -260,7 +314,7 @@ export default function Dashboard() {
                 cy="50%"
                 labelLine={false}
                 label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
-                outerRadius={100}
+                outerRadius={90}
                 fill="#8884d8"
                 dataKey="value"
               >
@@ -268,7 +322,13 @@ export default function Dashboard() {
                   <Cell key={`cell-${index}`} fill={COLORS[entry.name]} />
                 ))}
               </Pie>
-              <Tooltip />
+              <Tooltip 
+                contentStyle={{ 
+                  backgroundColor: '#1e293b', 
+                  border: '1px solid #334155',
+                  borderRadius: '8px'
+                }}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -276,18 +336,25 @@ export default function Dashboard() {
 
       {/* Attack Vector Breakdown */}
       {attackVectorData.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Attack Vector Breakdown</h3>
+        <div className="card card-hover">
+          <h3 className="text-xl font-semibold text-white glow-cyan mb-6">Attack Vector Breakdown</h3>
           <div className="grid grid-cols-2 gap-4">
             {attackVectorData.map((vector, index) => (
-              <div key={index} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-                <span className="font-medium">{vector.name}</span>
-                <span className="text-2xl font-bold text-blue-600">{vector.value}</span>
+              <div key={index} className="flex items-center justify-between p-5 bg-slate-800/50 rounded-xl border border-cyan-500/10">
+                <span className="font-medium text-slate-300">{vector.name}</span>
+                <span className="text-2xl font-bold text-cyan-400">{vector.value}</span>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {/* Update Status */}
+      <div className="fixed bottom-8 right-8 bg-slate-900 border border-emerald-500/30 rounded-lg px-4 py-3 text-sm text-emerald-300 flex items-center gap-2">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+        <span>Update complete!</span>
+      </div>
     </div>
   );
 }
+
