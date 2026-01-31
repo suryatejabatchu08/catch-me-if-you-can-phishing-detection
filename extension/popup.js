@@ -157,7 +157,9 @@ async function loadPageStatus() {
         return;
       }
       
-      console.log('Page status:', status);
+      console.log('📩 Page status received:', JSON.stringify(status, null, 2));
+      console.log('📩 Status.score:', status?.score);
+      console.log('📩 Status.safe:', status?.safe);
       
       if (status && !status.safe) {
         displayThreatStatus(status);
@@ -176,7 +178,12 @@ async function loadPageStatus() {
  * Display threat status with animations
  */
 function displayThreatStatus(status) {
+  console.log('🚨 displayThreatStatus called with:', JSON.stringify(status, null, 2));
   const { score, riskLevel, reasons = [] } = status;
+  
+  console.log('🚨 Extracted score:', score);
+  console.log('🚨 Extracted riskLevel:', riskLevel);
+  console.log('🚨 Extracted reasons:', reasons);
   
   // Animate status icon change
   const statusIcon = document.getElementById('statusIcon');

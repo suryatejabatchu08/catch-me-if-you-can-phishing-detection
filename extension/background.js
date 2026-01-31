@@ -377,7 +377,8 @@ async function callBackendAPI(url) {
 async function handleThreatResponse(tabId, url, threatData) {
   const { threat_score, risk_level, reasons = [], confidence = 1.0 } = threatData;
   
-  console.log(`Threat analysis complete: ${url} - Score: ${threat_score}`);
+  console.log(`🎯 Threat analysis complete: ${url} - Score: ${threat_score}`);
+  console.log('🎯 Full threat data:', JSON.stringify(threatData, null, 2));
   
   // Update tab status
   const status = {
@@ -390,6 +391,7 @@ async function handleThreatResponse(tabId, url, threatData) {
     timestamp: Date.now()
   };
   
+  console.log('🎯 Setting tab status:', JSON.stringify(status, null, 2));
   updateTabStatus(tabId, status);
   
   // If high threat, redirect to warning page
@@ -520,11 +522,15 @@ function cacheResult(url, data) {
  * Tab status management
  */
 function updateTabStatus(tabId, status) {
+  console.log(`💾 Updating status for tab ${tabId}:`, JSON.stringify(status, null, 2));
   tabThreatStatus.set(tabId, status);
+  console.log(`💾 Status updated. Map now has ${tabThreatStatus.size} entries`);
 }
 
 function getTabStatus(tabId) {
-  return tabThreatStatus.get(tabId) || { safe: true, score: 0 };
+  const status = tabThreatStatus.get(tabId) || { safe: true, score: 0 };
+  console.log(`🔍 Getting status for tab ${tabId}:`, JSON.stringify(status, null, 2));
+  return status;
 }
 
 // Clean up closed tabs
