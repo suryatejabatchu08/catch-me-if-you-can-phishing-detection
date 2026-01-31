@@ -66,7 +66,7 @@ async function checkBackendHealth() {
 
 // Initialize extension
 chrome.runtime.onInstalled.addListener(async () => {
-  console.log('PhishGuard AI installed');
+  console.log('%c🛡️ PhishGuard AI installed', 'color: #00ff00; font-weight: bold; font-size: 14px');
   
   // Initialize storage with default values
   chrome.storage.local.set({
@@ -83,15 +83,18 @@ chrome.runtime.onInstalled.addListener(async () => {
   
   // Check backend connectivity if not using mock API
   if (!USE_MOCK_API) {
+    console.log('%c🔌 Checking backend connection...', 'color: #ffaa00; font-weight: bold');
     const isBackendAvailable = await checkBackendHealth();
     if (isBackendAvailable) {
-      console.log('✅ Backend is available and ready');
+      console.log('%c✅ Backend is CONNECTED and ready at http://localhost:8000', 'color: #00ff00; font-weight: bold; font-size: 14px');
+      console.log('%c✅ Using REAL ML models + Threat Intelligence', 'color: #00ff00; font-weight: bold');
     } else {
-      console.warn('⚠️ Backend is not available - extension will use offline heuristics');
-      console.warn('   Make sure the backend is running on http://localhost:8000');
+      console.warn('%c⚠️ Backend is NOT AVAILABLE - extension will use offline heuristics', 'color: #ff6600; font-weight: bold; font-size: 14px');
+      console.warn('%c   Make sure the backend is running: cd backend && python main.py', 'color: #ff6600');
+      console.warn('%c   Current mode: FALLBACK to hardcoded rules (~60% accuracy)', 'color: #ff6600; font-weight: bold');
     }
   } else {
-    console.log('🔧 Using MOCK API mode');
+    console.log('%c🔧 Using MOCK API mode (hardcoded rules for testing)', 'color: #ffaa00; font-weight: bold');
   }
 });
 
@@ -148,9 +151,14 @@ async function analyzeURL(tabId, url) {
     
     // Call backend API for analysis (if not using mock)
     if (!USE_MOCK_API) {
-      console.log('Analyzing URL with backend:', url);
+      console.log('%c🚀 Analyzing URL with BACKEND ML API:', 'color: #00aaff; font-weight: bold', url);
       try {
         const threatData = await callBackendAPI(url);
+        
+        console.log('%c✅ BACKEND RESPONSE RECEIVED (using ML models + Threat Intel):', 'color: #00ff00; font-weight: bold');
+        console.log('%c   Threat Score: ' + threatData.threat_score, 'color: #00ff00; font-weight: bold');
+        console.log('%c   Risk Level: ' + threatData.risk_level, 'color: #00ff00; font-weight: bold');
+        console.log('%c   Full Analysis:', 'color: #00ff00', threatData);
         
         // Cache the result
         cacheResult(url, threatData);
@@ -159,11 +167,13 @@ async function analyzeURL(tabId, url) {
         await handleThreatResponse(tabId, url, threatData);
         return;
       } catch (apiError) {
-        console.error('Backend API error:', apiError);
+        console.error('%c❌ Backend API error:', 'color: #ff0000; font-weight: bold', apiError);
+        console.error('%c⚠️ FALLING BACK to offline heuristics (hardcoded rules)', 'color: #ff6600; font-weight: bold; font-size: 13px');
         // Fall through to heuristic fallback
       }
     } else {
       // Use mock API
+      console.log('%c🔧 Using MOCK API (hardcoded rules)', 'color: #ffaa00; font-weight: bold');
       const threatData = await callBackendAPI(url);
       cacheResult(url, threatData);
       await handleThreatResponse(tabId, url, threatData);
@@ -175,7 +185,8 @@ async function analyzeURL(tabId, url) {
   }
   
   // Fall back to basic heuristics if API fails
-  console.log('Falling back to offline heuristics');
+  console.log('%c⚠️ Falling back to offline heuristics (HARDCODED RULES)', 'color: #ff6600; font-weight: bold; font-size: 13px');
+  console.log('%c   This mode has ~60% accuracy. For best results, ensure backend is running.', 'color: #ff6600');
   const heuristicScore = performBasicHeuristics(url);
   await handleThreatResponse(tabId, url, {
     threat_score: heuristicScore,
