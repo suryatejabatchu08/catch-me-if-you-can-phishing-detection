@@ -13,6 +13,32 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 // Track current threat status per tab
 const tabThreatStatus = new Map();
 
+/**
+ * Check if URL should be skipped from analysis
+ */
+function shouldSkipURL(url) {
+  if (!url) return true;
+  
+  // Skip Chrome internal pages
+  if (url.startsWith('chrome://')) return true;
+  if (url.startsWith('chrome-extension://')) return true;
+  if (url.startsWith('about:')) return true;
+  if (url.startsWith('edge://')) return true;
+  if (url.startsWith('devtools://')) return true;
+  
+  // Skip local files (optional - remove if you want to analyze local files)
+  if (url.startsWith('file://')) return true;
+  
+  // Skip data URLs
+  if (url.startsWith('data:')) return true;
+  if (url.startsWith('blob:')) return true;
+  
+  // Skip extension install pages
+  if (url.includes('chrome.google.com/webstore')) return true;
+  
+  return false;
+}
+
 // Initialize extension
 chrome.runtime.onInstalled.addListener(() => {
   console.log('PhishGuard AI installed');
@@ -36,10 +62,8 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
   // Only analyze main frame navigations (not iframes)
   if (details.frameId !== 0) return;
   
-  // Skip internal Chrome pages
-  if (details.url.startsWith('chrome://') || 
-      details.url.startsWith('chrome-extension://') ||
-      details.url.startsWith('about:')) {
+  // Skip internal Chrome pages and extension pages
+  if (shouldSkipURL(details.url)) {
     return;
   }
   
@@ -51,7 +75,7 @@ chrome.webNavigation.onCommitted.addListener(async (details) => {
 
 // Monitor tab updates (for URL changes without full navigation)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
-  if (changeInfo.url && !changeInfo.url.startsWith('chrome://')) {
+  if (changeInfo.url && !shouldSkipURL(changeInfo.url)) {
     console.log('Tab URL changed:', changeInfo.url);
     await analyzeURL(tabId, changeInfo.url);
   }
@@ -385,24 +409,33 @@ async function incrementStats(key) {
 }
 
 async function logThreatEvent(url, threatData) {
-  const { threatHistory = [] } = await chrome.storage.local.get('threatHistory');
-  
-  const event = {
-    url: url,
-    score: threatData.threat_score,
-    risk: threatData.risk_level,
-    reasons: threatData.reasons,
-    timestamp: Date.now(),
-    blocked: threatData.threat_score >= THREAT_THRESHOLD
-  };
-  
-  // Keep only last 500 events
-  threatHistory.unshift(event);
-  if (threatHistory.length > 500) {
-    threatHistory.pop();
+  try {
+    const { threatHistory = [] } = await chrome.storage.local.get('threatHistory');
+    
+    const event = {
+      url: url,
+      score: threatData.threat_score,
+      risk: threatData.risk_level,
+      reasons: threatData.reasons,
+      timestamp: Date.now(),
+      blocked: threatData.threat_score >= THREAT_THRESHOLD
+    };
+    
+    // Keep only last 100 events to avoid quota issues
+    threatHistory.unshift(event);
+    if (threatHistory.length > 100) {
+      threatHistory.splice(100); // Remove all items after index 100
+    }
+    
+    await chrome.storage.local.set({ threatHistory });
+  } catch (error) {
+    console.error('Error logging threat event:', error);
+    // If quota exceeded, clear old history
+    if (error.message.includes('quota')) {
+      console.log('Storage quota exceeded, clearing old history...');
+      await chrome.storage.local.set({ threatHistory: [] });
+    }
   }
-  
-  await chrome.storage.local.set({ threatHistory });
 }
 
 /**
