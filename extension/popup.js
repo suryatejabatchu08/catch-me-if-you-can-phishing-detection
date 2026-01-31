@@ -219,8 +219,8 @@ function setupEventListeners() {
   if (dashboardBtn) {
     dashboardBtn.addEventListener('click', () => {
       console.log('Dashboard clicked');
-      // TODO: Open dashboard page
-      chrome.tabs.create({ url: 'dashboard.html' });
+      // Open dashboard in new tab
+      chrome.tabs.create({ url: 'http://localhost:5173' });
     });
   }
   
