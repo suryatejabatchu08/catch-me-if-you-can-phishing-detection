@@ -3,8 +3,8 @@
 
 const API_ENDPOINT = 'http://localhost:8000/api/v1/analyze/url';
 const THREAT_THRESHOLD = 60; // Score above which we show warnings
-const ANALYSIS_TIMEOUT = 3000; // 3 second timeout for API calls
-const USE_MOCK_API = true; // Set to false when backend is ready
+const ANALYSIS_TIMEOUT = 5000; // 5 second timeout for API calls
+const USE_MOCK_API = false; // Connected to backend
 
 // In-memory cache for analyzed URLs (to prevent duplicate analysis)
 const urlCache = new Map();
@@ -39,8 +39,33 @@ function shouldSkipURL(url) {
   return false;
 }
 
+/**
+ * Check if backend is available
+ */
+async function checkBackendHealth() {
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout
+    
+    const response = await fetch('http://localhost:8000/health', {
+      method: 'GET',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    return response.ok;
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      console.warn('Backend health check timed out');
+    } else {
+      console.warn('Backend health check failed:', error.message);
+    }
+    return false;
+  }
+}
+
 // Initialize extension
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener(async () => {
   console.log('PhishGuard AI installed');
   
   // Initialize storage with default values
@@ -55,6 +80,19 @@ chrome.runtime.onInstalled.addListener(() => {
       showNotifications: true
     }
   });
+  
+  // Check backend connectivity if not using mock API
+  if (!USE_MOCK_API) {
+    const isBackendAvailable = await checkBackendHealth();
+    if (isBackendAvailable) {
+      console.log('✅ Backend is available and ready');
+    } else {
+      console.warn('⚠️ Backend is not available - extension will use offline heuristics');
+      console.warn('   Make sure the backend is running on http://localhost:8000');
+    }
+  } else {
+    console.log('🔧 Using MOCK API mode');
+  }
 });
 
 // Monitor navigation events
@@ -108,28 +146,43 @@ async function analyzeURL(tabId, url) {
     // Update stats
     await incrementStats('totalScans');
     
-    // Call backend API for analysis
-    console.log('Analyzing URL with backend:', url);
-    const threatData = await callBackendAPI(url);
-    
-    // Cache the result
-    cacheResult(url, threatData);
-    
-    // Handle the response
-    await handleThreatResponse(tabId, url, threatData);
+    // Call backend API for analysis (if not using mock)
+    if (!USE_MOCK_API) {
+      console.log('Analyzing URL with backend:', url);
+      try {
+        const threatData = await callBackendAPI(url);
+        
+        // Cache the result
+        cacheResult(url, threatData);
+        
+        // Handle the response
+        await handleThreatResponse(tabId, url, threatData);
+        return;
+      } catch (apiError) {
+        console.error('Backend API error:', apiError);
+        // Fall through to heuristic fallback
+      }
+    } else {
+      // Use mock API
+      const threatData = await callBackendAPI(url);
+      cacheResult(url, threatData);
+      await handleThreatResponse(tabId, url, threatData);
+      return;
+    }
     
   } catch (error) {
     console.error('Error analyzing URL:', error);
-    
-    // Fall back to basic heuristics if API fails
-    const heuristicScore = performBasicHeuristics(url);
-    await handleThreatResponse(tabId, url, {
-      threat_score: heuristicScore,
-      risk_level: heuristicScore > THREAT_THRESHOLD ? 'high' : 'safe',
-      reasons: ['API unavailable - using offline analysis'],
-      confidence: 0.6
-    });
   }
+  
+  // Fall back to basic heuristics if API fails
+  console.log('Falling back to offline heuristics');
+  const heuristicScore = performBasicHeuristics(url);
+  await handleThreatResponse(tabId, url, {
+    threat_score: heuristicScore,
+    risk_level: heuristicScore > THREAT_THRESHOLD ? 'high' : heuristicScore > 40 ? 'medium' : 'safe',
+    reasons: ['Backend unavailable - using offline analysis'],
+    confidence: 0.6
+  });
 }
 
 /**
@@ -192,6 +245,46 @@ function mockAPIAnalysis(url) {
 }
 
 /**
+ * Transform backend response to match extension format
+ */
+function transformBackendResponse(backendResponse) {
+  // Extract reasons from analysis.reasons array
+  const reasons = backendResponse.analysis?.reasons || [];
+  const reasonsList = reasons.map(reason => {
+    // Convert reason object to readable string
+    if (typeof reason === 'string') {
+      return reason;
+    }
+    // Format: "Factor description (Source: severity)"
+    if (reason && typeof reason === 'object') {
+      return `${reason.factor || 'Threat detected'} (${reason.source || 'analysis'})`;
+    }
+    return String(reason);
+  });
+  
+  // If no reasons, provide a default based on score
+  if (reasonsList.length === 0) {
+    if (backendResponse.threat_score >= 80) {
+      reasonsList.push('High threat score detected');
+    } else if (backendResponse.threat_score >= 60) {
+      reasonsList.push('Suspicious indicators detected');
+    } else {
+      reasonsList.push('No significant threats detected');
+    }
+  }
+  
+  return {
+    threat_score: backendResponse.threat_score,
+    risk_level: backendResponse.risk_level || 'safe',
+    reasons: reasonsList,
+    confidence: backendResponse.confidence || 0.8,
+    is_phishing: backendResponse.is_phishing || false,
+    recommendation: backendResponse.recommendation || 'allow',
+    analysis: backendResponse.analysis // Keep full analysis for debugging
+  };
+}
+
+/**
  * Call backend API for URL analysis
  */
 async function callBackendAPI(url) {
@@ -203,19 +296,32 @@ async function callBackendAPI(url) {
     return mockAPIAnalysis(url);
   }
   
+  // Validate URL format
+  if (!url || typeof url !== 'string') {
+    throw new Error('Invalid URL provided');
+  }
+  
+  // Ensure URL has protocol
+  let normalizedUrl = url;
+  if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    normalizedUrl = 'https://' + url;
+    console.warn('⚠️ URL missing protocol, assuming https:', normalizedUrl);
+  }
+  
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT);
   
   try {
+    console.log('🔗 Calling backend API:', API_ENDPOINT);
+    console.log('📤 Request payload:', { url: normalizedUrl });
+    
     const response = await fetch(API_ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        url: url,
-        timestamp: new Date().toISOString(),
-        user_agent: navigator.userAgent
+        url: normalizedUrl
       }),
       signal: controller.signal
     });
@@ -223,17 +329,44 @@ async function callBackendAPI(url) {
     clearTimeout(timeoutId);
     
     if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
+      const errorText = await response.text();
+      console.error(`API error ${response.status}:`, errorText);
+      throw new Error(`API returned ${response.status}: ${errorText}`);
     }
     
-    return await response.json();
+    const data = await response.json();
+    console.log('✅ Backend API response received:', data);
+    
+    // Validate response
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid response format: expected JSON object');
+    }
+    
+    // Transform backend response to match extension format
+    const transformed = transformBackendResponse(data);
+    console.log('✅ Transformed response:', transformed);
+    return transformed;
     
   } catch (error) {
     clearTimeout(timeoutId);
     
     if (error.name === 'AbortError') {
-      console.error('API request timed out');
+      console.error('⏱️ API request timed out after', ANALYSIS_TIMEOUT, 'ms');
+      throw new Error('Request timeout - backend may be slow or unavailable');
     }
+    
+    if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError') || error.message.includes('ERR_CONNECTION_REFUSED')) {
+      console.error('🌐 Network error - backend may be offline');
+      console.error('   Make sure the backend is running: cd backend && python main.py');
+      throw new Error('Cannot connect to backend - is the server running on port 8000?');
+    }
+    
+    if (error.message.includes('CORS')) {
+      console.error('🚫 CORS error - check backend CORS configuration');
+      throw new Error('CORS error - backend may not allow extension requests');
+    }
+    
+    console.error('❌ API call failed:', error);
     throw error;
   }
 }
