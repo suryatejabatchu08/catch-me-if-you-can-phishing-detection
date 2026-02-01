@@ -5,7 +5,7 @@
 
 const API_CONFIG = {
   // Backend API base URL
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000',
+  baseURL: https://suryateja008-catch-me-if-you-can-phishing-detection.hf.space/Analysis/analyze_url_api_v1_analyze_url_post || 'http://localhost:8000',
   
   // API endpoints
   endpoints: {
