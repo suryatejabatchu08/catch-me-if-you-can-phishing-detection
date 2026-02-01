@@ -5,7 +5,7 @@
 
 const API_CONFIG = {
   // Backend API base URL
-  baseURL: 'https://suryateja008-catch-me-if-you-can-phishing-detection.hf.space/Analysis/analyze_url' || 'http://localhost:8000',
+  baseURL: 'https://suryateja008-catch-me-if-you-can-phishing-detection.hf.space' || 'http://localhost:8000',
   
   // API endpoints
   endpoints: {
